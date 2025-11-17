@@ -1,34 +1,69 @@
+/* iclude and header file section */
+#include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <termios.h>
 #include <unistd.h>
-#include <termios.h> 
+
+/* macro section */
+
+
+/* global vars section */
+
+struct termios orig_termios;
+
+/* prototype section */
 
 void enableRawMode();
+void disableRawMode();
+void die(const char *s);
 
-int main() 
-{
+/* init section */
+
+int main(){
 	enableRawMode();
-	char c;
-	while (read(STDIN_FILENO, &c, 1) == 1 && c != 'q');
-	// reading 1 byte from the std inp into the var c
-	// when 'q' is read the program exits
 
+	while (1){
+		char c = '\0';
+		if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) die("read");
+		if (iscntrl(c)) {
+			printf("%d\r\n", c);
+		} else {
+			printf("%d ('%c')\r\n", c, c);
+		}
+		if (c == 'q'){
+			break;
+		}
+	}
 	return 0;
 }
 
-void enableRawMode() 
-// enabling raw mode instead of canonical/cooked mode
+/* terminal section */
 
-{
-	struct termios raw;
-
-	tcgetattr(STDIN_FILENO, &raw);
-	// reading the current attributes into a struct
-
-	raw.c_lflag &= ~(ECHO);
-	// turning off the ECHO feature, so that each
-	// typed key is not printed to the terminal
-
-	tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-	// passing the modified struct to write the new
-	// terminal attributes back out
+void die(const char *s) {
+	perror(s);
+	exit(1);
 }
+
+void disableRawMode(){
+	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1) {
+		die("tcsetattr");
+	}	
+}
+
+void enableRawMode(){
+	if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) die("tcgetattr");
+	atexit(disableRawMode);
+	
+	struct termios raw = orig_termios;
+	raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+	raw.c_oflag &= ~(OPOST);
+	raw.c_cflag |= (CS8);
+	raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+	raw.c_cc[VMIN] = 0;
+	raw.c_cc[VTIME] = 1;
+
+	if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
+}
+
